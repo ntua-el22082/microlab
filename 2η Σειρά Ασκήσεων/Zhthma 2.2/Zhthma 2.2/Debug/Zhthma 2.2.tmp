@@ -1,0 +1,39 @@
+<ASSEMBLER_INFO>
+ <VERSION>2.2.8</VERSION>
+ <DEVICE>"ATmega328PB"</DEVICE>
+ <WORKING_DIR>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\Debug</WORKING_DIR>
+ <INCLUDE_PATH>
+  <DIR>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.7.374\avrasm\inc</DIR>
+  <DIR>C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\avr8\avrassembler\Include</DIR>
+  <DIR></DIR>
+ </INCLUDE_PATH>
+ <SOURCE_FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\main.asm</SOURCE_FILE>
+ <INCLUDED_FILES>
+  <FILE>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.7.374\avrasm\inc\m328PBdef.inc</FILE>
+  <FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE>
+ </INCLUDED_FILES>
+ <OBJECT_FILES>
+  <FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\Debug\Zhthma 2.2.obj</FILE>
+ </OBJECT_FILES>
+ <HEX_FILES>
+  <FILE>Zhthma 2.2.hex</FILE>
+ </HEX_FILES>
+ <OUTPUT_FILES>
+  <FILE>Zhthma 2.2.map</FILE>
+  <FILE>Zhthma 2.2.lss</FILE>
+ </OUTPUT_FILES>
+ <LABELS>
+  <reset><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\main.asm</FILE><LINE>9</LINE></reset>
+  <ISR0><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\main.asm</FILE><LINE>57</LINE></ISR0>
+  <wait_x_msec><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>1</LINE></wait_x_msec>
+  <all_good_before><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>17</LINE></all_good_before>
+  <all_good><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>23</LINE></all_good>
+  <FIRST_LOOPA><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>28</LINE></FIRST_LOOPA>
+  <FINISH><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>49</LINE></FINISH>
+  <LOOPAA><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>37</LINE></LOOPAA>
+  <LOOPAB><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\wait_x_msec.asm</FILE><LINE>43</LINE></LOOPAB>
+  <loop1><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\main.asm</FILE><LINE>43</LINE></loop1>
+  <loop2><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\main.asm</FILE><LINE>45</LINE></loop2>
+  <TABLE><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\Zhthma 2.2\Zhthma 2.2\main.asm</FILE><LINE>84</LINE></TABLE>
+ </LABELS>
+</ASSEMBLER_INFO>
