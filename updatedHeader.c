@@ -10,6 +10,49 @@
 #include <string.h>
 #include <stdio.h>
 
+// =============================================
+//				  ADC
+// =============================================
+
+void adc_init() {
+	// AVCC with external capacitor at AREF pin
+	// Right adjusted (ADCH[1:0], ADCL[7:0]) (ADLAR for left adjusted)
+	// MUX0, MUX1, MUX2, MUX3 to choose between A0, A1, ... A7 ... reserved (currently A0)
+	ADMUX = (1 << REFS0); 
+	// ADEN: Enable ADC
+	// ADPS[2:0]: Set ADC clock freq (more accurate requires greater) -- division factor = 128
+	ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+}
+
+int16_t get_volt() {
+	// This is set to 1 to tell ADC to start the conversion, when ready it will turns to 0
+	ADCSRA |= (1 << ADSC);
+	while((1 << ADSC) & ADCSRA); // polling
+
+	return ADCL + ((int16_t)(ADCH & 0x03) << 8);
+}
+
+// ============================================
+//				 PWM
+// ============================================
+
+void pwm_init() {
+	TCCR1A = (1<<WGM10) | (1<<COM1A1);	// fast pace 8 bit, non inverted PWM output
+	TCCR1B = (1<<WGM12) | (1<<CS10);	// fast pace 8-bit, clk
+	
+	// REMEMBER TO SET DDRB TO OUTPUT !!!!
+}
+
+// 0 for no light, 255 for max brightness
+// for example pwm_set_duty_cycle(255 / 5) for 20%
+void pwm_set_duty_cycle(uint8_t duty) {
+	OCR1AL = duty;
+}
+
+// =============================================
+//					ONE WIRE
+// =============================================
+
 uint8_t one_wire_reset() {
     DDRD |= 0b00010000;
     
@@ -583,8 +626,6 @@ void keypad_init() {
  * ===================================================
 */
 
-// USART  
-
 /* 
  * Routine: usart_init Description: This routine initializes the usart as shown below. 
  * -------------------------- INITIALIZATIONS -------------------------------------------
@@ -592,7 +633,9 @@ void keypad_init() {
  * parameters: ubrr to control the BAUD. return value: None.
 */
 
-// USART
+// =================================================================
+//								USART
+// =================================================================
 
 void usart_init(unsigned int ubrr) {
     UCSR0A = 0;
@@ -633,7 +676,9 @@ void usart_receive_string(char buf[]) {
     buf[BUF_SZ-1] = '\0';
 }
 
-// WiFi ESP8266
+// ==============================================
+//					WiFi ESP8266
+// ==============================================
 
 /* Uses the provided SSID and Password to connect to the WiFi network, if connection is succesful, returns 1 */
 uint8_t esp_connect() {
@@ -688,37 +733,15 @@ void esp_transmit(char resp[]) {
     usart_receive_string(resp);
 }
 
-void adc_init() {
-    // AVCC with external capacitor at AREF pin
-    // Right adjusted (ADCH[1:0], ADCL[7:0])
-    ADMUX = (1 << REFS0);
-    // ADEN: Enable ADC
-    // ADPS[2:0]: Set ADC clock freq (more accurate requires greater) -- division factor = 128
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); 
-}
-
-int16_t get_volt() {
-    // This is set to 1 to tell ADC to start the conversion, when ready it will turns to 0
-    ADCSRA |= (1 << ADSC);
-    while((1 << ADSC) & ADCSRA); // polling
-
-    return ADCL + ((int16_t)(ADCH & 0x03) << 8);
-}
-
-#if DS18B20
-#define TEMP_SHIFT 4
-#else
-#define TEMP_SHIFT 1
-#endif
-
 // =======================================
 //				HEADER END
 // =======================================
 
 // =======================================
-//	     INTERRUPT SETUP EXAMPLE
+//	     TIMER INTERRUPT SETUP EXAMPLE
 // =======================================
 
+/*
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #define F_CPU 16000000UL
@@ -752,21 +775,41 @@ ISR(TIMER1_COMPA_vect) {
 	PORTB ^= (1 << PORTB5); // Example: Toggle LED on Pin 13
 	cnt++;
 }
+*/
+
+// IN MAIN EXAMPLE: setup_timer1_interrupt(1.0) // Trigger every 1.0 second
 
 // =======================================
-//	     INTERRUPT SETUP END
+//	     TIMER INTERRUPT SETUP END
 // =======================================
 
+/*
+// ==========================================
+//			INTERRUPT SETUP GUIDE
+// ==========================================
+
+
+INT0 <=> PD2 
+ISR(INT0_VECT) {
+	...	
+}
+
+EICRA |= (1 << ISC01);	// Configure trigger to rising edge
+// Other cases: 
+ISCnx1 ISCnx0 
+0      0       Low level 
+0      1       Logical change
+1      0       Falling edge
+1      1       Rising edge
+
+EIMSK |= (1 << INT0);	// To enable INT0
+
+- Same logic for INT0 <=> PD3
+
+*/
 
 int main(void) {
-	DDRB |= (1 << DDB5);    // Set LED as output
-
-	setup_timer1_interrupt(1.0); // Trigger every 1.0 seconds
-
-	lcd_init();
-	while (1) {
-		lcd_clear_display();
-		lcd_write_uint16_t(cnt);
-		_delay_ms(30);
-	}
+	DDRB = 0xFF;
+	pwm_init();
+	pwm_set_duty_cycle(255 / 5);
 }
