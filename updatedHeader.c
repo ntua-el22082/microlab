@@ -1,0 +1,772 @@
+// =======================================
+//				HEADER START
+// =======================================
+
+#include <xc.h>
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <string.h>
+#include <stdio.h>
+
+uint8_t one_wire_reset() {
+    DDRD |= 0b00010000;
+    
+    PORTD &= 0b11101111;
+    _delay_us(480);
+
+    DDRD &= 0b11101111;
+    PORTD &= 0b11101111;
+
+    _delay_us(100);
+
+    uint8_t pd = PIND;
+    _delay_us(380);
+
+    return (pd & 0b00010000) == 0;
+}
+
+int8_t one_wire_receive_bit() {
+    DDRD |= (1 << PD4);      // PD4 = output
+    PORTD &= ~(1 << PD4);    // PD4 = LOW
+    _delay_us(2);
+
+    DDRD &= ~(1 << PD4);     // PD4= input (release line)
+    PORTD &= ~(1 << PD4);    // disable internal pull-up
+    _delay_us(10);
+
+    uint8_t bit = (PIND & (1 << PD4)) ? 1 : 0;
+    _delay_us(49);
+
+    return bit;
+}
+
+void one_wire_transmit_bit(uint8_t bit) {
+    DDRD |= (1 << PD4);      // PD4 = output
+    PORTD &= ~(1 << PD4);    // PD4 = LOW
+    _delay_us(2);
+
+    PORTD |= (bit << PD4);
+    _delay_us(58);
+
+    DDRD &= ~(1 << PD4);     // PD4= input (release line)
+    PORTD &= ~(1 << PD4);    // disable internal pull-up
+    _delay_us(1);            // recovery time
+}
+
+uint8_t one_wire_receive_byte() {
+    uint8_t ret = 0;
+    for(int i = 0; i < 8; i++) {
+        uint8_t bit = one_wire_receive_bit();
+        ret |= (bit << i);
+    }
+    return ret;
+}
+
+void one_wire_transmit_byte(uint8_t byte) {
+    for(int i = 0; i < 8; i++) {
+        one_wire_transmit_bit(byte & 1);
+        byte >>= 1;
+    }
+}
+
+#define DS18B20 1
+
+// For DS18B20 == 0 
+// temp_celsius = 0.5 * ret (for ret > 0 - first byte not set)
+uint16_t get_temp() {
+    // Initialize connection to sensor
+    if(!one_wire_reset())
+        return 0x8000;
+    // Command to skip device selection
+    one_wire_transmit_byte(0xCC);
+    
+    // Command to start a temperature measurement
+    one_wire_transmit_byte(0x44);
+
+    // Wait until slave tells you its ready
+    while(!one_wire_receive_bit());
+
+    // Re-initialize connection (maybe to ensure synchronization)
+    if(!one_wire_reset())
+        return 0x8000; 
+    one_wire_transmit_byte(0xCC);
+
+    // Command to request measurement data 
+    one_wire_transmit_byte(0xBE);
+
+    // Receive data
+    uint8_t dataLS = one_wire_receive_byte();
+    uint16_t dataMS = one_wire_receive_byte();
+    return (dataMS << 8) | dataLS;
+}
+
+/*
+ * This should only be called when we know that the result of the division will be {0, 1, ..., 9}
+ * With such small range of outputs we can iterate each one in 0, 1, ... finding the last one that "fits"
+ * Could also apply 1 or 2 steps of binary search
+ * For now we stick with default implementation
+*/
+inline uint8_t fast_div(uint16_t a, uint16_t b) {
+    return a / b; 
+}
+
+/*
+ * log10(&exp, &pw, x) -> exp = floor(log_10(x)), pw = 10^exp
+ * log10(&exp, &pw, 0) -> exp = 0, pw = 1 
+*/
+
+void logg10(int8_t *exp, uint16_t *pw, uint16_t x) {
+    *exp = 0;
+    *pw = 1;
+
+    while(10 * (*pw) <= x) {
+        *pw *= 10;
+        (*exp)++;
+    }
+}
+
+/*
+ * val = 0001 1110 0001 1100
+ *       ^          ^
+ *      sign     baseOffset = 6
+ * After my_sprintf is called:
+ * buf = (sign ? "-" : "") 
+ *      + to_string(1 * val[baseOffset] + 2 * val[baseOffset+1] + ...) + "."
+ *      + to_string(0.5 * val[baseOffset-1] + 0.25 * val[baseOffset-2] + ...)
+ * Only the buff_size most significant characters (includes "-" and ".") are stored in buf
+ * 
+ * Note: Could make it return 1 if the whole part (with the sign) does not fit in buffer
+*/
+void my_sprintf(uint16_t val, uint8_t baseOffset, char buf[], uint8_t buf_size, uint8_t msd) {
+    uint8_t pos = 0;
+    if(val >> 15) {
+        buf[pos++] = '-';
+        // Get positive, assuming 2s complement (should work fine also for decimals)
+        val = ~val + 1;
+    }
+
+    // Isolate whole and decimal parts
+    uint16_t decimal_mask = (1 << baseOffset) - 1;  
+    uint16_t decimal = val & decimal_mask;
+    uint16_t whole = val >> baseOffset;
+
+    // Get greatest power of 10 that does not exceed whole part
+    int8_t dec_offset, dig_cnt = 0;
+    uint16_t divisor;
+    logg10(&dec_offset, &divisor, whole);
+
+    while(pos < buf_size-1 && dig_cnt < msd && dec_offset >= 0) {
+        uint8_t dig = fast_div(whole, divisor);
+        buf[pos++] = '0' + dig; 
+        dig_cnt++;
+
+        whole -= dig * divisor;
+        whole *= 10;      // Same effect as dividing the divisor by 10
+        dec_offset--;   // Distance from . decreases
+    }
+
+    /* 
+     * Note: Because of special behavior of log10(_, _, 0) the case
+     * where a number does not have a whole part is also handled nicely
+    */
+
+    if(pos == buf_size-1 || pos == buf_size-2) {
+        buf[pos] = '\0';
+        return;
+    }
+    buf[pos++] = '.';
+
+    /*
+     * For decimal part: (baseOffset = 8) - decimal / 256 left
+     * To get first digit: 10 * decimal / 256 or >> baseOffset
+     * Any bit that has crossed the baseOffset point has been accounted for
+     * So to continue for the remainder, filter for (10 * decimal) & decimal_mask
+    */
+
+    while(pos < buf_size-1 && dig_cnt < msd) { 
+        decimal *= 10;
+        uint8_t dig = decimal >> baseOffset;
+        buf[pos++] = '0' + dig;
+        dig_cnt++;
+
+        decimal &= decimal_mask;
+    } 
+    buf[pos] = '\0';
+} 
+
+/* Converts raw temperature sensor reading to a decimal string.
+ * Uses baseOffset=1 for DS18S20 (0.5°C resolution) or baseOffset=4 for DS18B20 (0.0625°C resolution). */
+void temp_to_string(char buf[], uint16_t bufSz, uint16_t msr, uint8_t sigDig) {
+    uint8_t baseOffset = 1;
+#ifdef DS18B20
+    baseOffset = 4;
+#endif
+    my_sprintf(msr, baseOffset, buf, bufSz, sigDig);
+}
+
+// ============================================
+//			          TWI
+// ============================================
+
+#define PCA9555_0_ADDRESS 0x40 //A0=A1=A2=0 by hardware
+#define TWI_READ 1 // reading from twi device
+#define TWI_WRITE 0 // writing to twi device
+#define SCL_CLOCK 100000L // twi clock in Hz
+//Fscl=Fcpu/(16+2*TWBR0_VALUE*PRESCALER_VALUE)
+#define TWBR0_VALUE ((F_CPU/SCL_CLOCK)-16)/2
+// PCA9555 REGISTERS
+typedef enum {
+	REG_INPUT_0 = 0,
+	REG_INPUT_1 = 1,
+	REG_OUTPUT_0 = 2,
+	REG_OUTPUT_1 = 3,
+	REG_POLARITY_INV_0 = 4,
+	REG_POLARITY_INV_1 = 5,
+	REG_CONFIGURATION_0 = 6,
+	REG_CONFIGURATION_1 = 7
+} PCA9555_REGISTERS;
+//----------- Master Transmitter/Receiver -------------------
+#define TW_START 0x08
+#define TW_REP_START 0x10
+//---------------- Master Transmitter ----------------------
+#define TW_MT_SLA_ACK 0x18
+#define TW_MT_SLA_NACK 0x20
+#define TW_MT_DATA_ACK 0x28
+//---------------- Master Receiver ----------------
+#define TW_MR_SLA_ACK 0x40
+#define TW_MR_SLA_NACK 0x48
+#define TW_MR_DATA_NACK 0x58
+#define TW_STATUS_MASK 0b11111000
+#define TW_STATUS (TWSR0 & TW_STATUS_MASK)
+
+//initialize TWI clock
+void twi_init(void)
+{
+	TWSR0 = 0; // PRESCALER_VALUE=1
+	TWBR0 = TWBR0_VALUE; // SCL_CLOCK 100KHz
+}
+// Read one byte from the twi device (request more data from device)
+unsigned char twi_readAck(void)
+{
+	TWCR0 = (1<<TWINT) | (1<<TWEN) | (1<<TWEA);
+	while(!(TWCR0 & (1<<TWINT)));
+	return TWDR0;
+}
+//Read one byte from the twi device, read is followed by a stop condition
+unsigned char twi_readNak(void)
+{
+	TWCR0 = (1<<TWINT) | (1<<TWEN);
+	while(!(TWCR0 & (1<<TWINT)));
+	return TWDR0;
+}
+// Issues a start condition and sends address and transfer direction.
+// return 0 = device accessible, 1= failed to access device
+unsigned char twi_start(unsigned char address)
+{
+	uint8_t twi_status;
+	// send START condition
+	TWCR0 = (1<<TWINT) | (1<<TWSTA) | (1<<TWEN);
+	// wait until transmission completed
+	while(!(TWCR0 & (1<<TWINT)));
+	// check value of TWI Status Register.
+	twi_status = TW_STATUS & 0xF8;
+	if ( (twi_status != TW_START) && (twi_status != TW_REP_START)) return 1;
+	// send device address
+	TWDR0 = address;
+	TWCR0 = (1<<TWINT) | (1<<TWEN);
+	// wail until transmission completed and ACK/NACK has been received
+	while(!(TWCR0 & (1<<TWINT)));
+	// check value of TWI Status Register.
+	twi_status = TW_STATUS & 0xF8;
+	if ( (twi_status != TW_MT_SLA_ACK) && (twi_status != TW_MR_SLA_ACK) )
+	{
+		return 1;
+	}
+	return 0;
+}
+// Send start condition, address, transfer direction.
+// Use ack polling to wait until device is ready
+void twi_start_wait(unsigned char address)
+{
+	uint8_t twi_status;
+	while ( 1 )
+	{
+		// send START condition
+		TWCR0 = (1<<TWINT) | (1<<TWSTA) | (1<<TWEN);
+
+		// wait until transmission completed
+		while(!(TWCR0 & (1<<TWINT)));
+
+		// check value of TWI Status Register.
+		twi_status = TW_STATUS & 0xF8;
+		if ( (twi_status != TW_START) && (twi_status != TW_REP_START)) continue;
+
+		// send device address
+		TWDR0 = address;
+		TWCR0 = (1<<TWINT) | (1<<TWEN);
+
+		// wail until transmission completed
+		while(!(TWCR0 & (1<<TWINT)));
+
+		// check value of TWI Status Register.
+		twi_status = TW_STATUS & 0xF8;
+		if ( (twi_status == TW_MT_SLA_NACK )||(twi_status ==TW_MR_DATA_NACK) )
+		{
+			/* device busy, send stop condition to terminate write operation */
+			TWCR0 = (1<<TWINT) | (1<<TWEN) | (1<<TWSTO);
+
+			// wait until stop condition is executed and bus released
+			while(TWCR0 & (1<<TWSTO));
+
+			continue;
+		}
+		break;
+	}
+}
+// Send one byte to twi device, Return 0 if write successful or 1 if write failed
+unsigned char twi_write( unsigned char data )
+{
+	// send data to the previously addressed device
+	TWDR0 = data;
+	TWCR0 = (1<<TWINT) | (1<<TWEN);
+	// wait until transmission completed
+	while(!(TWCR0 & (1<<TWINT)));
+	if( (TW_STATUS & 0xF8) != TW_MT_DATA_ACK) return 1;
+	return 0;
+}
+// Send repeated start condition, address, transfer direction
+//Return: 0 device accessible
+// 1 failed to access device
+unsigned char twi_rep_start(unsigned char address)
+{
+	return twi_start( address );
+}
+// Terminates the data transfer and releases the twi bus
+void twi_stop(void)
+{
+	// send stop condition
+	TWCR0 = (1<<TWINT) | (1<<TWEN) | (1<<TWSTO);
+	// wait until stop condition is executed and bus released
+	while(TWCR0 & (1<<TWSTO));
+}
+void PCA9555_0_write(PCA9555_REGISTERS reg, uint8_t value)
+{
+	twi_start_wait(PCA9555_0_ADDRESS + TWI_WRITE);
+	twi_write(reg);
+	twi_write(value);
+	twi_stop();
+}
+
+uint8_t PCA9555_0_read(PCA9555_REGISTERS reg)
+{
+	uint8_t ret_val;
+
+	twi_start_wait(PCA9555_0_ADDRESS + TWI_WRITE);
+	twi_write(reg);
+	twi_rep_start(PCA9555_0_ADDRESS + TWI_READ);
+	ret_val = twi_readNak();
+	twi_stop();
+	return ret_val;
+}
+
+// =============================================================
+//				LCD (depends only on PCA9555_0_write / read)
+// =============================================================
+
+// Which port will the LED screen use? Comment out for direct PORTD mode
+#define LCD_USE_PCA9555
+#ifdef LCD_USE_PCA9555
+#define LCD_WRITE(val) PCA9555_0_write(REG_OUTPUT_0, (val))
+#else
+#define LCD_WRITE(val) (PORTD = (val))
+#endif
+
+uint8_t lcd_read = 0x00;
+void write_2_nibbles(uint8_t word) {
+	uint8_t input, output;
+	input = lcd_read;
+	output = (input & 0x0f) | (word & 0xf0);
+	output |=word & 0xf0;
+	LCD_WRITE(output);
+	output |= 0b00001000;
+	LCD_WRITE(output);
+	asm volatile("nop\n\t"
+	"nop\n\t");
+	output &= 0b11110111;
+	LCD_WRITE(output);
+	output = (input & 0x0f) | ((word & 0x0f) << 4);
+	LCD_WRITE(output);
+	output |= 0b00001000;
+	LCD_WRITE(output);
+	asm volatile("nop\n\t"
+	"nop\n\t");
+	output &= 0b11110111;
+	LCD_WRITE(output);
+	lcd_read = output;
+	return;
+}
+
+void lcd_data(uint8_t word) {
+	lcd_read |= 0b00000100;
+	LCD_WRITE(lcd_read);
+	write_2_nibbles(word);
+	_delay_us(250);
+	return;
+}
+
+void lcd_command(uint8_t command) {
+	lcd_read &= 0b11111011;
+	LCD_WRITE(lcd_read);
+	write_2_nibbles(command);
+	_delay_us(250);
+	return;
+}
+
+void lcd_clear_display() {
+	lcd_command(0x01);
+	lcd_read = 0x01;
+	_delay_ms(5);
+	return;
+}
+
+void lcd_init() {
+	#ifdef LCD_USE_PCA9555
+	twi_init();
+	PCA9555_0_write(REG_CONFIGURATION_0, 0x00);
+	#else
+	DDRD = 0xFF;
+	#endif
+	_delay_ms(200);
+	for(int i = 0; i < 3; i++) {
+		lcd_read = 0x30;
+		LCD_WRITE(lcd_read);
+		lcd_read |= 0b00001000;
+		LCD_WRITE(lcd_read);
+		asm volatile("nop\n\t"
+		"nop\n\t");
+		lcd_read &= 0b11110111;
+		LCD_WRITE(lcd_read);
+		_delay_us(250);
+	}
+	lcd_read = 0x20;
+	LCD_WRITE(lcd_read);
+	lcd_read |= 0b00001000;
+	LCD_WRITE(lcd_read);
+	asm volatile("nop\n\t"
+	"nop\n\t");
+	lcd_read &= 0b11110111;
+	LCD_WRITE(lcd_read);
+	_delay_us(250);
+	lcd_command(0x28);
+	lcd_command(0x0c);
+	lcd_clear_display();
+	lcd_command(0x06);
+}
+
+void lcd_write_string(const char *str){
+	while(*str)
+	lcd_data(*str++);
+}
+
+void lcd_clear_write_string(const char *str) {
+	lcd_clear_display();
+	lcd_command(0x80);
+	lcd_write_string(str);
+}
+
+void lcd_write_uint16_t(uint16_t x) {
+	char buffer[7];
+	snprintf(buffer, 6, "%d", x);
+	lcd_write_string(buffer);
+}
+
+/* Displays temperature reading on LCD with 3 significant digits. */
+void lcd_write_temperature(uint16_t msr) {
+	char buf[6]; // At most 5 characters will be displayed (one more for null termination)
+	temp_to_string(buf, 6, msr, 3);
+	lcd_write_string(buf);
+}
+
+void lcd_goto_first_line() {
+	lcd_command(0x80);
+}
+
+void lcd_goto_second_line() {
+	lcd_command(0xC0);
+}
+
+// ============================================
+//			       KEYBOARD
+// ============================================
+
+uint16_t scan_row(uint8_t row) { // row should be 0-indexed
+	// We need to set REG_OUTPUT_1 to 0b00001101
+	//                                        ^- row = 1
+	
+	uint8_t mask = 0x0f ^ (1 << row);
+	PCA9555_0_write(REG_OUTPUT_1, mask);
+	
+	uint8_t input = (~PCA9555_0_read(REG_INPUT_1) & 0xf0) >> 4;
+	
+	return (uint16_t)input << (4 * row);
+	// 0000 0000 0000 0101 ('*' and '#' are pressed)
+	// 0000 0011 0000 0000 ('4' and '5' are pressed)
+}
+
+uint16_t scan_keypad() {
+	uint16_t keypad = 0;
+	for(uint8_t i = 0; i < 4; i++)
+		keypad |= scan_row(i);
+	return keypad;
+}
+
+uint16_t pressed_keys;
+uint16_t scan_keypad_rising_edge() {
+	uint16_t pressed_keys_tempo = scan_keypad();
+	// Reject keys that are not pressed after 20ms
+	_delay_ms(20);
+	pressed_keys_tempo &= scan_keypad();
+
+	// pressed_keys       = 0000 0011 0101 1101
+	// pressed_keys_tempo = 0001 1101 0010 0111
+	// new_pressed        = 0001 1100 0010 0010
+
+	uint16_t new_pressed = pressed_keys_tempo ^ (pressed_keys & pressed_keys_tempo);
+	pressed_keys = pressed_keys_tempo;
+	return new_pressed;
+}
+
+uint8_t bitToAscii[] = {'*', '0', '#', 'D', '7', '8', '9', 'C', '4', '5', '6', 'B', '1', '2', '3', 'A'};
+
+uint8_t keypad_to_ascii(uint16_t keyMask) {
+	// we assume that only 1 key can be pressed at a time
+	if(__builtin_popcount(keyMask) != 1)
+		return 0;
+	return bitToAscii[__builtin_ctz(keyMask)];
+}
+
+// YOU SHOULD USE THIS FOR 90% OF KEYPAD INTERFACE
+// Returns ascii of key pressed (0 if multiple keys are pressed at the time of sampling)
+uint8_t keypad_get_cur_ascii() {
+	return keypad_to_ascii(scan_keypad());
+}
+
+/*
+THIS IS EXERCISE SPECIFIC
+void show_leds() {
+	uint8_t output = 0;
+	uint8_t curPressedAscii = keypad_to_ascii(scan_keypad());
+	output |= (curPressedAscii == '4');
+	output |= (curPressedAscii == '2') << 1;
+	output |= (curPressedAscii == '3') << 2;
+	output |= (curPressedAscii == 'B') << 3;
+
+	// We should connect EXT_PORT0 with PORTB!
+	PCA9555_0_write(REG_OUTPUT_0, output);
+
+	// DDRB = 0xff;
+	// PORTB = output;
+}
+
+*/
+void keypad_init() {
+	twi_init();
+	PCA9555_0_write(REG_CONFIGURATION_0, 0x00); //Set EXT_PORT0 as output
+	PCA9555_0_write(REG_CONFIGURATION_1, 0xf0); //Set EXT_PORT1 as input/output
+}
+
+/*
+ * ===================================================
+ *                      PART 8
+ * ===================================================
+*/
+
+// USART  
+
+/* 
+ * Routine: usart_init Description: This routine initializes the usart as shown below. 
+ * -------------------------- INITIALIZATIONS -------------------------------------------
+ * Baud rate: 9600 (Fck= 8MH) Asynchronous mode Transmitter on Reciever on Communication parameters: 8 Data ,1 Stop, no Parity 
+ * parameters: ubrr to control the BAUD. return value: None.
+*/
+
+// USART
+
+void usart_init(unsigned int ubrr) {
+    UCSR0A = 0;
+    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+    UBRR0H = (unsigned char)(ubrr >> 8);
+    UBRR0L = (unsigned char)ubrr; 
+    UCSR0C = (3 << UCSZ00);
+    return;
+}
+
+/* Routine: usart_transmit Description: This routine sends a byte of data using usart. parameters: data: the byte to be transmitted return value: None. */
+void usart_transmit(uint8_t data) {
+    while (!(UCSR0A & (1 << UDRE0)));
+    UDR0 = data;
+}
+
+/* Routine: usart_receive Description: This routine receives a byte of data from usart. parameters: None. return value: the received byte */
+uint8_t usart_receive() {
+    while(!(UCSR0A & (1 << RXC0)));
+    return UDR0;
+}
+
+void usart_transmit_string(const char* str) {
+    while(*str)
+        usart_transmit(*str++);
+}
+
+#define BUF_SZ 128
+
+void usart_receive_string(char buf[]) {
+    for(int i = 0; i < BUF_SZ; i++) {
+        buf[i] = usart_receive();
+        if(!buf[i] || buf[i] == '\n') {
+            buf[i] = '\0';
+            return;
+        }
+    }
+    buf[BUF_SZ-1] = '\0';
+}
+
+// WiFi ESP8266
+
+/* Uses the provided SSID and Password to connect to the WiFi network, if connection is succesful, returns 1 */
+uint8_t esp_connect() {
+	lcd_clear_write_string("Trying to con");
+    usart_transmit_string("ESP:connect\n");
+
+    char resp[BUF_SZ];
+	usart_receive_string(resp);
+	
+	return (strcmp(resp, "\"Success\"") == 0);
+		
+	// return 1;
+	// if (strcmp(resp, "\"Fail\"") == 0)
+	//	return 0;
+}
+
+uint8_t esp_set_url(const char* url) {
+    char buf[BUF_SZ];
+    snprintf(buf, BUF_SZ, "ESP:url:\"%s\"\n", url);
+    usart_transmit_string(buf);
+    
+    while (1) {
+	    usart_receive_string(buf);
+	    if (strcmp(buf, "\"Success\"") == 0)
+			return 1;
+	    if (strcmp(buf, "\"Fail\"") == 0)
+			return 0;
+    }
+}
+
+uint8_t esp_set_payload(char temp_buf[], char press_buf[], char id_buf[], char status_buf[]) {
+    usart_transmit_string("ESP:payload:");
+	
+	usart_transmit_string("[{\"name\": \"temperature\",\"value\": \"");
+	usart_transmit_string(temp_buf);
+	usart_transmit_string("\"},{\"name\": \"pressure\",\"value\": \"");
+	usart_transmit_string(press_buf);
+	usart_transmit_string("\"},{\"name\": \"team\",\"value\": \"");
+	usart_transmit_string(id_buf);
+	usart_transmit_string("\"},{\"name\": \"status\",\"value\": \"");
+	usart_transmit_string(status_buf);
+	usart_transmit_string("\"}]");
+    usart_transmit('\n');
+
+    char resp[BUF_SZ];
+    usart_receive_string(resp);
+    return strcmp(resp, "\"Success\"") == 0;
+}
+
+void esp_transmit(char resp[]) {
+    usart_transmit_string("ESP:transmit\n");
+    usart_receive_string(resp);
+}
+
+void adc_init() {
+    // AVCC with external capacitor at AREF pin
+    // Right adjusted (ADCH[1:0], ADCL[7:0])
+    ADMUX = (1 << REFS0);
+    // ADEN: Enable ADC
+    // ADPS[2:0]: Set ADC clock freq (more accurate requires greater) -- division factor = 128
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); 
+}
+
+int16_t get_volt() {
+    // This is set to 1 to tell ADC to start the conversion, when ready it will turns to 0
+    ADCSRA |= (1 << ADSC);
+    while((1 << ADSC) & ADCSRA); // polling
+
+    return ADCL + ((int16_t)(ADCH & 0x03) << 8);
+}
+
+#if DS18B20
+#define TEMP_SHIFT 4
+#else
+#define TEMP_SHIFT 1
+#endif
+
+// =======================================
+//				HEADER END
+// =======================================
+
+// =======================================
+//	     INTERRUPT SETUP EXAMPLE
+// =======================================
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#define F_CPU 16000000UL
+
+void setup_timer1_interrupt(double t) {
+	// 1. Calculate OCR1A value with a 1024 prescaler
+	// Formula: (Clock / (Prescaler * Target_Freq)) - 1
+	uint32_t ocr_value = (uint32_t)((F_CPU / (1024.0 * (1.0 / t))) - 0.5) - 1;
+
+	// 2. Set TCNT1 to 0
+	TCNT1 = 0;
+
+	// 3. Set the Output Compare Register
+	OCR1A = (uint16_t)ocr_value;
+
+	// 4. Configure Timer1 for CTC Mode (WGM12 = 1)
+	// 5. Set Prescaler to 1024 (CS12 = 1, CS10 = 1)
+	TCCR1B |= (1 << WGM12) | (1 << CS12) | (1 << CS10);
+
+	// 6. Enable Timer1 Compare Match A Interrupt
+	TIMSK1 |= (1 << OCIE1A);
+
+	// 7. Enable Global Interrupts
+	sei();
+}
+
+// The Interrupt Service Routine (ISR)
+int16_t cnt = 0;
+ISR(TIMER1_COMPA_vect) {
+	// Your code to run every t seconds goes here
+	PORTB ^= (1 << PORTB5); // Example: Toggle LED on Pin 13
+	cnt++;
+}
+
+// =======================================
+//	     INTERRUPT SETUP END
+// =======================================
+
+
+int main(void) {
+	DDRB |= (1 << DDB5);    // Set LED as output
+
+	setup_timer1_interrupt(1.0); // Trigger every 1.0 seconds
+
+	lcd_init();
+	while (1) {
+		lcd_clear_display();
+		lcd_write_uint16_t(cnt);
+		_delay_ms(30);
+	}
+}
