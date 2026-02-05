@@ -1,0 +1,41 @@
+<ASSEMBLER_INFO>
+ <VERSION>2.2.8</VERSION>
+ <DEVICE>"ATmega328PB"</DEVICE>
+ <WORKING_DIR>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\Debug</WORKING_DIR>
+ <INCLUDE_PATH>
+  <DIR>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.7.374\avrasm\inc</DIR>
+  <DIR>C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\avr8\avrassembler\Include</DIR>
+  <DIR></DIR>
+ </INCLUDE_PATH>
+ <SOURCE_FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</SOURCE_FILE>
+ <INCLUDED_FILES>
+  <FILE>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.7.374\avrasm\inc\m328PBdef.inc</FILE>
+  <FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE>
+ </INCLUDED_FILES>
+ <OBJECT_FILES>
+  <FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\Debug\ASKSHSH 3.1.obj</FILE>
+ </OBJECT_FILES>
+ <HEX_FILES>
+  <FILE>ASKSHSH 3.1.hex</FILE>
+ </HEX_FILES>
+ <OUTPUT_FILES>
+  <FILE>ASKSHSH 3.1.map</FILE>
+  <FILE>ASKSHSH 3.1.lss</FILE>
+ </OUTPUT_FILES>
+ <LABELS>
+  <main><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>12</LINE></main>
+  <wait_x_msec><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>1</LINE></wait_x_msec>
+  <all_good_before><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>17</LINE></all_good_before>
+  <all_good><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>23</LINE></all_good>
+  <FIRST_LOOPA><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>28</LINE></FIRST_LOOPA>
+  <FINISH><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>49</LINE></FINISH>
+  <LOOPAA><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>37</LINE></LOOPAA>
+  <LOOPAB><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\wait_x_msec.asm</FILE><LINE>43</LINE></LOOPAB>
+  <TABLE><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>76</LINE></TABLE>
+  <start><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>32</LINE></start>
+  <loop><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>37</LINE></loop>
+  <meiosi><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>64</LINE></meiosi>
+  <auxisi><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>52</LINE></auxisi>
+  <result><FILE>C:\Users\vkk\Documents\Atmel Studio\7.0\ASKSHSH 3.1\ASKSHSH 3.1\main.asm</FILE><LINE>45</LINE></result>
+ </LABELS>
+</ASSEMBLER_INFO>
